@@ -2,22 +2,24 @@ import TelegramBot from 'node-telegram-bot-api';
 import express from 'express';
 import { processRubyMessage } from './ruby-ai';
 
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN!, { 
-  polling: process.env.NODE_ENV === 'development',
-  webHook: process.env.NODE_ENV === 'production'
+const token = process.env.TELEGRAM_BOT_TOKEN!;
+const isProduction = process.env.NODE_ENV === 'production';
+
+const bot = new TelegramBot(token, {
+  polling: !isProduction,
+  webHook: isProduction
 });
 
 const app = express();
 app.use(express.json());
 
-// RUBY AI - FUNÇÃO PRINCIPAL
+// Função principal para tratar mensagens
 async function handleMessage(msg: any) {
   const chatId = msg.chat.id;
   const text = msg.text?.toLowerCase() || '';
-  
+
   console.log(`[${new Date().toLocaleString('pt-BR')}] Mensagem recebida: "${text}"`);
 
-  // Comandos tradicionais (mantidos)
   if (text.startsWith('/start')) {
     return bot.sendMessage(chatId, 
       '🤖 *Ruby AI Bot Ativado!*\n\n' +
@@ -28,7 +30,7 @@ async function handleMessage(msg: any) {
       '⚡ *Comandos Rápidos:*\n' +
       '• `/ocorrencia` - Nova ocorrência\n' +
       '• `/historico` - Ver histórico\n\n' +
-      '*Agora você pode falar naturalmente comigo!*', 
+      '*Agora você pode falar naturalmente comigo!*',
       { parse_mode: 'Markdown' }
     );
   }
@@ -42,14 +44,9 @@ async function handleMessage(msg: any) {
         [{ text: '🔌 NAP GPON', callback_data: 'tipo_nap_gpon' }]
       ]
     };
-    
-    return bot.sendMessage(chatId, 
-      '🔧 *Selecione o tipo de ocorrência:*', 
-      { reply_markup: keyboard, parse_mode: 'Markdown' }
-    );
+    return bot.sendMessage(chatId, '🔧 *Selecione o tipo de ocorrência:*', { reply_markup: keyboard, parse_mode: 'Markdown' });
   }
 
-  // RUBY AI - PROCESSAMENTO NATURAL
   if (text.includes('ruby') || text.includes('problema') || text.includes('ocorrencia') || text.includes('internet') || text.includes('eletric')) {
     try {
       console.log('[Ruby AI] Processando mensagem conversacional...');
@@ -57,13 +54,10 @@ async function handleMessage(msg: any) {
       return bot.sendMessage(chatId, response.message, response.options || {});
     } catch (error) {
       console.error('[Ruby AI] Erro:', error);
-      return bot.sendMessage(chatId, 
-        '❌ Desculpe, houve um erro ao processar sua mensagem. Tente usar `/ocorrencia` para criar uma nova ocorrência.'
-      );
+      return bot.sendMessage(chatId, '❌ Desculpe, houve um erro ao processar sua mensagem. Tente usar `/ocorrencia` para criar uma nova ocorrência.');
     }
   }
 
-  // Resposta padrão para mensagens não reconhecidas
   bot.sendMessage(chatId, 
     '🤖 Olá! Sou a Ruby AI.\n\n' +
     '💡 *Como posso ajudar?*\n' +
@@ -78,7 +72,7 @@ bot.on('callback_query', async (query) => {
   const chatId = query.message?.chat.id;
   if (!chatId) return;
 
-  const links = {
+  const links: Record<string, string> = {
     tipo_eletrica: 'https://form.fillout.com/t/2Z8FQqRJpYus',
     tipo_conectividade: 'https://form.fillout.com/t/bQXvnMkkYxus', 
     tipo_rede_externa: 'https://form.fillout.com/t/gPXvnMkkYxus',
@@ -87,23 +81,17 @@ bot.on('callback_query', async (query) => {
 
   const link = links[query.data as keyof typeof links];
   if (link) {
-    const tipos = {
+    const tipos: Record<string, string> = {
       tipo_eletrica: '⚡ Elétrica',
       tipo_conectividade: '🌐 Conectividade', 
       tipo_rede_externa: '📡 Rede Externa',
       tipo_nap_gpon: '🔌 NAP GPON'
     };
-    
     const tipo = tipos[query.data as keyof typeof tipos];
     const keyboard = { inline_keyboard: [[{ text: '📝 Abrir Formulário', url: link }]] };
-    
-    await bot.sendMessage(chatId, 
-      `✅ *Ocorrência ${tipo} selecionada!*\n\n` +
-      `🔗 Clique no botão abaixo para acessar o formulário:`, 
-      { reply_markup: keyboard, parse_mode: 'Markdown' }
-    );
+    await bot.sendMessage(chatId, `✅ *Ocorrência ${tipo} selecionada!*\n\n🔗 Clique no botão abaixo para acessar o formulário:`, { reply_markup: keyboard, parse_mode: 'Markdown' });
   }
-  
+
   bot.answerCallbackQuery(query.id);
 });
 
@@ -111,19 +99,19 @@ bot.on('callback_query', async (query) => {
 bot.on('message', handleMessage);
 
 // Webhook para produção
-if (process.env.NODE_ENV === 'production') {
+if (isProduction) {
   const port = process.env.PORT || 3000;
   const url = process.env.RENDER_EXTERNAL_URL || `https://ruby-ocorrencias-bot.onrender.com`;
-  
-  app.post(`/webhook/${process.env.TELEGRAM_BOT_TOKEN}`, (req, res) => {
+
+  app.post(`/webhook/${token}`, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
   });
-  
+
   app.listen(port, async () => {
     console.log(`[${new Date().toLocaleString('pt-BR')}] 🚀 Server running on port ${port}`);
     try {
-      await bot.setWebHook(`${url}/webhook/${process.env.TELEGRAM_BOT_TOKEN}`);
+      await bot.setWebHook(`${url}/webhook/${token}`);
       console.log(`[${new Date().toLocaleString('pt-BR')}] ✅ Webhook configurado: ${url}`);
     } catch (error) {
       console.error('❌ Erro ao configurar webhook:', error);
