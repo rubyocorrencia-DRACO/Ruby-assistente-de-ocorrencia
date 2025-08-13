@@ -1,142 +1,245 @@
 import TelegramBot from 'node-telegram-bot-api';
 import express from 'express';
-import * as Commands from './commands';
+import fs from 'fs';
+import path from 'path';
+import { processRubyMessage } from './ruby-ai';
+import { v4 as uuidv4 } from 'uuid';
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN!, {
   polling: process.env.NODE_ENV === 'development',
-  webHook: process.env.NODE_ENV === 'production'
+  webHook: process.env.NODE_ENV === 'production',
 });
 
 const app = express();
 app.use(express.json());
 
-// Estado temporário de login por telegramId
-const loginStates: Record<number, 'waitingLogin' | 'waitingName' | 'waitingArea' | 'waitingPhone' | 'confirmed'> = {};
-const tempUserData: Record<number, Partial<Commands.User>> = {};
+// Arquivos de dados
+const USERS_FILE = path.join(__dirname, 'data/users.json');
+const OCCURRENCES_FILE = path.join(__dirname, 'data/occurrences.json');
 
-// ---------- HANDLER DE MENSAGENS ---------- //
+// Carrega JSON ou cria vazio
+function loadJson(file: string) {
+  if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify([]));
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
 
-bot.on('message', async (msg) => {
+function saveJson(file: string, data: any) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+// Função auxiliar
+function formatDate(d: Date) {
+  return d.toLocaleString('pt-BR');
+}
+
+// Verifica se o Telegram ID é master
+function isMaster(chatId: number) {
+  const masters = [parseInt(process.env.MASTER_ID || '0')];
+  return masters.includes(chatId);
+}
+
+// Função principal de mensagens
+async function handleMessage(msg: any) {
   const chatId = msg.chat.id;
-  const text = msg.text?.trim();
+  const text = msg.text?.trim() || '';
 
-  if (!text) return;
+  console.log(`[${formatDate(new Date())}] Mensagem recebida: "${text}"`);
 
-  const user = Commands.getUser(chatId);
+  const users = loadJson(USERS_FILE);
+  const occurrences = loadJson(OCCURRENCES_FILE);
 
-  // ---- COMANDOS INICIAIS ---- //
-  if (text === '/start') {
+  // /start
+  if (text.startsWith('/start')) {
     return bot.sendMessage(chatId,
       `🤖 Bem-vindo ao Ruby Ocorrências Bot!\n\n` +
       `Olá! 👋\n\n` +
-      `Este bot foi desenvolvido para facilitar o registro de ocorrências técnicas em campo.\n\n` +
       `📋 Comandos disponíveis:\n` +
       `• /login - Autenticar como técnico\n` +
       `• /ocorrencia - Registrar nova ocorrência\n` +
       `• /historico - Ver suas ocorrências\n` +
       `• /status <número> - Consultar por contrato\n` +
-      `• /help - Mostrar esta ajuda\n\n` +
-      `🔐 Para começar a usar, faça o login com /login\n\n` +
+      `• /help - Mostrar ajuda\n\n` +
+      `🔐 Para começar a usar, faça seu login com /login\n\n` +
       `Ruby Telecom - Sistema de Ocorrências`
     );
   }
 
-  if (text === '/help' || text === '/ajuda') {
-    return bot.sendMessage(chatId, Commands.getHelpMessage());
+  // /help
+  if (text.startsWith('/help') || text.startsWith('/ajuda')) {
+    return bot.sendMessage(chatId,
+      `📖 Ajuda - Ruby Ocorrências Bot\n\n` +
+      `🔹 Comandos Principais:\n` +
+      `/start - Inicializar o bot\n` +
+      `/login - Fazer login no sistema\n` +
+      `/forcelogin - Limpar todos os dados do seu login\n` +
+      `/logout - Sair do sistema\n` +
+      `/ocorrencia - Registrar nova ocorrência\n` +
+      `/historico - Ver suas ocorrências recentes\n` +
+      `/status <número> - Consultar ocorrências por contrato\n\n` +
+      `🔹 Tipos de Ocorrência:\n` +
+      `• Rede Externa\n` +
+      `• Rede Externa NAP GPON\n` +
+      `• Backbone\n` +
+      `• Backbone GPON\n\n` +
+      `Ruby Telecom - Sistema de Ocorrências`
+    );
   }
 
-  // ---- LOGIN / CADASTRO ---- //
+  // /login
   if (text.startsWith('/login')) {
-    if (user) {
-      return bot.sendMessage(chatId, `✅ Você já está logado como ${user.name}`);
+    const arg = text.split(' ')[1];
+    if (!arg) return bot.sendMessage(chatId, '🔐 Digite seu login após /login (ex: A123456)');
+
+    let user = users.find((u: any) => u.telegramId === chatId);
+
+    if (!user) {
+      // Novo cadastro
+      user = { telegramId: chatId, login: arg.toUpperCase(), step: 'nome' };
+      users.push(user);
+      saveJson(USERS_FILE, users);
+      return bot.sendMessage(chatId, '👤 Digite seu nome completo:');
+    } else {
+      return bot.sendMessage(chatId, '✅ Login já registrado. Você pode usar /ocorrencia ou /historico.');
     }
-    loginStates[chatId] = 'waitingLogin';
-    return bot.sendMessage(chatId, `🔐 Digite seu login (Ex: A123456):`);
   }
 
-  if (loginStates[chatId] === 'waitingLogin') {
-    tempUserData[chatId] = { telegramId: chatId, login: text.toUpperCase() };
-    loginStates[chatId] = 'waitingName';
-    return bot.sendMessage(chatId, `👤 Digite seu nome completo:`);
+  // Cadastro passo a passo
+  let user = users.find((u: any) => u.telegramId === chatId);
+  if (user && user.step) {
+    switch (user.step) {
+      case 'nome':
+        user.nome = text.toUpperCase();
+        user.step = 'area';
+        saveJson(USERS_FILE, users);
+        return bot.sendMessage(chatId, '🏢 Digite sua área de atuação:');
+      case 'area':
+        user.area = text.toUpperCase();
+        user.step = 'telefone';
+        saveJson(USERS_FILE, users);
+        return bot.sendMessage(chatId, '📱 Digite seu telefone:');
+      case 'telefone':
+        user.telefone = text;
+        user.step = 'confirmar';
+        saveJson(USERS_FILE, users);
+        return bot.sendMessage(chatId,
+          `📋 Confirme seus dados:\n\n` +
+          `🔐 Login: ${user.login}\n` +
+          `👤 Nome: ${user.nome}\n` +
+          `🏢 Área: ${user.area}\n` +
+          `📱 Telefone: ${user.telefone}\n\n` +
+          `Digite CONFIRMAR para finalizar ou CANCELAR para reiniciar.`
+        );
+      case 'confirmar':
+        if (text.toUpperCase() === 'CONFIRMAR') {
+          delete user.step;
+          saveJson(USERS_FILE, users);
+          return bot.sendMessage(chatId, `✅ Login realizado com sucesso! Bem-vindo, ${user.nome}`);
+        } else if (text.toUpperCase() === 'CANCELAR') {
+          users.splice(users.indexOf(user), 1);
+          saveJson(USERS_FILE, users);
+          return bot.sendMessage(chatId, '❌ Cadastro cancelado. Use /login para reiniciar.');
+        } else {
+          return bot.sendMessage(chatId, 'Digite CONFIRMAR ou CANCELAR.');
+        }
+    }
+    return;
   }
 
-  if (loginStates[chatId] === 'waitingName') {
-    tempUserData[chatId]!.name = text.toUpperCase();
-    loginStates[chatId] = 'waitingArea';
-    return bot.sendMessage(chatId, `🏢 Agora digite sua área de atuação:`);
+  // /forcelogin
+  if (text.startsWith('/forcelogin')) {
+    const idx = users.findIndex((u: any) => u.telegramId === chatId);
+    if (idx >= 0) users.splice(idx, 1);
+    saveJson(USERS_FILE, users);
+    return bot.sendMessage(chatId, '✅ Seus dados foram limpos. Use /login para registrar novo login.');
   }
 
-  if (loginStates[chatId] === 'waitingArea') {
-    tempUserData[chatId]!.area = text.toUpperCase();
-    loginStates[chatId] = 'waitingPhone';
-    return bot.sendMessage(chatId, `📱 Agora digite seu número de telefone:`);
+  // /setmaster - só você autoriza
+  if (text.startsWith('/setmaster')) {
+    if (chatId.toString() === process.env.ADMIN_ID) {
+      const arg = text.split(' ')[1];
+      if (!arg) return bot.sendMessage(chatId, 'Digite o Telegram ID do usuário para tornar master.');
+      const targetId = parseInt(arg);
+      const userTarget = users.find((u: any) => u.telegramId === targetId);
+      if (!userTarget) return bot.sendMessage(chatId, 'Usuário não encontrado.');
+      userTarget.master = true;
+      saveJson(USERS_FILE, users);
+      return bot.sendMessage(chatId, `✅ Usuário ${userTarget.nome} agora é master.`);
+    } else {
+      return bot.sendMessage(chatId, '❌ Você não tem autorização.');
+    }
   }
 
-  if (loginStates[chatId] === 'waitingPhone') {
-    tempUserData[chatId]!.phone = text;
-    loginStates[chatId] = 'confirmed';
-    const u = tempUserData[chatId] as Commands.User;
-    Commands.addUser(u);
-    delete tempUserData[chatId];
-    delete loginStates[chatId];
-    return bot.sendMessage(chatId, `✅ Login realizado com sucesso!\nBem-vindo, ${u.name}`);
+  // /clearuser - só master
+  if (text.startsWith('/clearuser')) {
+    if (!isMaster(chatId)) return bot.sendMessage(chatId, '❌ Você não é master.');
+    const arg = text.split(' ')[1];
+    if (!arg) return bot.sendMessage(chatId, 'Digite o login do usuário a ser removido.');
+    const idx = users.findIndex((u: any) => u.login === arg.toUpperCase());
+    if (idx < 0) return bot.sendMessage(chatId, 'Usuário não encontrado.');
+    const userTarget = users[idx];
+    // Remove usuário e suas ocorrências
+    users.splice(idx, 1);
+    const updatedOccurrences = occurrences.filter((o: any) => o.telegramId !== userTarget.telegramId);
+    saveJson(USERS_FILE, users);
+    saveJson(OCCURRENCES_FILE, updatedOccurrences);
+    return bot.sendMessage(chatId, `✅ Usuário ${userTarget.nome} e seu histórico removidos.`);
   }
 
-  // ---- OCORRÊNCIA ---- //
-  if (text.startsWith('/ocorrencia')) {
-    if (!user) return bot.sendMessage(chatId, `⚠️ Você precisa fazer login primeiro com /login`);
-    const keyboard = {
-      inline_keyboard: Object.keys(Commands.occurrenceForms).map(type => [{ text: type, callback_data: type }])
-    };
-    return bot.sendMessage(chatId, `🔧 Selecione o tipo de ocorrência:`, { reply_markup: keyboard });
+  // RUBY AI - mensagens naturais
+  if (text.toLowerCase().includes('ruby')) {
+    try {
+      const response = await processRubyMessage(text);
+      return bot.sendMessage(chatId, response.message, response.options || {});
+    } catch (e) {
+      console.error(e);
+      return bot.sendMessage(chatId, '❌ Erro ao processar sua mensagem.');
+    }
   }
 
-  // ---- HISTÓRICO ---- //
-  if (text.startsWith('/historico')) {
-    if (!user) return bot.sendMessage(chatId, `⚠️ Você precisa fazer login primeiro com /login`);
-    const occs = Commands.getOccurrencesByUser(chatId);
-    return bot.sendMessage(chatId, `📋 Histórico de Ocorrências - ${user.name}\n\n${Commands.formatOccurrencesList(occs)}`);
-  }
+  // Mensagens padrão
+  return bot.sendMessage(chatId,
+    '🤖 Use /help para ver os comandos disponíveis.'
+  );
+}
 
-  // ---- STATUS ---- //
-  if (text.startsWith('/status')) {
-    const parts = text.split(' ');
-    if (parts.length < 2) return bot.sendMessage(chatId, `⚠️ Use /status <número do contrato>`);
-    const contract = parts[1];
-    const occs = Commands.getOccurrencesByContract(contract);
-    return bot.sendMessage(chatId, `📋 Status do contrato ${contract}\n\n${Commands.formatOccurrencesList(occs)}`);
-  }
-});
-
-// ---- CALLBACK DOS BOTÕES ---- //
-
+// Callback de botões de ocorrência
 bot.on('callback_query', async (query) => {
   const chatId = query.message?.chat.id;
-  if (!chatId || !query.data) return;
+  if (!chatId) return;
 
-  const type = query.data;
-  const formLink = Commands.occurrenceForms[type];
-  if (!formLink) return;
+  const forms: Record<string, string> = {
+    rede_externa: 'https://redeexterna.fillout.com/t/g56SBKiZALus',
+    rede_externa_gpon: 'https://redeexterna.fillout.com/t/6VTMJST5NMus',
+    backbone: 'https://redeexterna.fillout.com/t/7zfWL9BKM6us',
+    backbone_gpon: 'https://redeexterna.fillout.com/t/atLL2dekh3us',
+  };
 
-  // Criar ocorrência temporária com ID
-  const user = Commands.getUser(chatId);
-  if (!user) return bot.sendMessage(chatId, `⚠️ Você precisa fazer login primeiro com /login`);
+  const tipoMap: Record<string, string> = {
+    rede_externa: 'Rede Externa',
+    rede_externa_gpon: 'Rede Externa NAP GPON',
+    backbone: 'Backbone',
+    backbone_gpon: 'Backbone GPON',
+  };
 
-  const occurrence = Commands.createOccurrence(chatId, '000000', type); // contrato será preenchido no formulário real
+  const formLink = forms[query.data as keyof typeof forms];
+  const tipo = tipoMap[query.data as keyof typeof tipoMap];
 
-  // Enviar mensagem de ocorrência e apagar depois para não poluir
-  const msg = await bot.sendMessage(chatId,
-    `✅ Tipo selecionado: ${type}\n\n📋 Clique no link abaixo para preencher o formulário:\n🔗 ${formLink}\n\n⚠️ Após enviar, sua ocorrência será registrada automaticamente.\nUse /historico para ver suas ocorrências ou /status <número> para consultar por contrato.`
-  );
-
-  setTimeout(() => {
-    bot.deleteMessage(chatId, msg.message_id).catch(() => {});
-  }, 15000); // apaga após 15 segundos
+  if (formLink) {
+    await bot.sendMessage(chatId,
+      `✅ Tipo selecionado: ${tipo}\n\n` +
+      `📋 Clique no link abaixo para preencher o formulário:\n\n` +
+      `🔗 ${formLink}\n\n` +
+      `⚠️ Preencha todos os campos obrigatórios. Use /historico para ver suas ocorrências ou /status <número> para consultar por contrato.`
+    );
+  }
 
   bot.answerCallbackQuery(query.id);
 });
 
-// ---- WEBHOOK PARA PRODUÇÃO ---- //
+// Listener principal
+bot.on('message', handleMessage);
+
+// Webhook para produção
 if (process.env.NODE_ENV === 'production') {
   const port = process.env.PORT || 3000;
   const url = process.env.RENDER_EXTERNAL_URL || `https://ruby-ocorrencias-bot.onrender.com`;
@@ -147,16 +250,16 @@ if (process.env.NODE_ENV === 'production') {
   });
 
   app.listen(port, async () => {
-    console.log(`[${new Date().toLocaleString('pt-BR')}] 🚀 Server running on port ${port}`);
+    console.log(`[${formatDate(new Date())}] 🚀 Server running on port ${port}`);
     try {
       await bot.setWebHook(`${url}/webhook/${process.env.TELEGRAM_BOT_TOKEN}`);
-      console.log(`[${new Date().toLocaleString('pt-BR')}] ✅ Webhook configurado: ${url}`);
+      console.log(`[${formatDate(new Date())}] ✅ Webhook configurado: ${url}`);
     } catch (error) {
       console.error('❌ Erro ao configurar webhook:', error);
     }
   });
 } else {
-  console.log(`[${new Date().toLocaleString('pt-BR')}] 🔄 Bot em modo desenvolvimento (polling)`);
+  console.log(`[${formatDate(new Date())}] 🔄 Bot em modo desenvolvimento (polling)`);
 }
 
-console.log(`[${new Date().toLocaleString('pt-BR')}] 🤖 Ruby AI Bot inicializado!`);
+console.log(`[${formatDate(new Date())}] 🤖 Ruby AI Bot inicializado!`);
