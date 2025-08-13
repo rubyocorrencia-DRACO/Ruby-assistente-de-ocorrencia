@@ -1,0 +1,159 @@
+Ruby Ocorrências Bot - Telegram
+Bot de Telegram para registro e acompanhamento de ocorrências técnicas em campo com integração ao Google Sheets e Google Forms.
+
+🚀 Funcionalidades
+Autenticação via Google Sheets: Login com formato específico (ex: Z481036)
+Registro de Ocorrências: Sistema organizado por tipos de ocorrência
+Integração Google Forms: Links específicos para cada tipo de ocorrência
+Histórico: Consulta de ocorrências anteriores
+Consulta por Contrato: Busca de ocorrências por número de contrato
+Interface Web: Painel de status e instruções
+📋 Comandos do Bot
+/start - Inicializar conta no sistema
+/login - Autenticar como técnico (formato: uma letra + 3-6 números)
+/ocorrencia - Registrar nova ocorrência
+/historico - Ver ocorrências recentes
+/status <número> - Consultar ocorrências por contrato
+/help - Mostrar ajuda completa
+🔧 Instalação
+1. Clone o repositório
+git clone https://github.com/seu-usuario/ruby-ocorrencias-bot.git
+cd ruby-ocorrencias-bot
+2. Instale as dependências
+npm install
+3. Configure as variáveis de ambiente
+Copie o arquivo .env.example para .env e configure:
+
+cp .env.example .env
+Configure as seguintes variáveis no arquivo .env:
+
+# Token do bot do Telegram (obtenha com @BotFather)
+TELEGRAM_BOT_TOKEN=seu_token_aqui
+# URL do webhook para produção (ex: https://seu-app.onrender.com)
+TELEGRAM_WEBHOOK_URL=https://seu-app.onrender.com
+# Credenciais do Google Sheets (JSON completo da service account)
+GOOGLE_CREDENTIALS_JSON={"type":"service_account","project_id":"..."}
+# Configurações opcionais
+NODE_ENV=development
+PORT=5000
+4. Configure as planilhas do Google Sheets
+Planilha de Usuários
+URL: https://docs.google.com/spreadsheets/d/1o6UwDTMZGyehaTAvdtyF7mD3vd1ZvgiEc2OEtiSG450/edit
+
+Colunas:
+
+A: Login (ex: Z481036)
+B: Nome Completo
+C: Telefone
+D: Área de Atuação
+E: Ativo (TRUE/FALSE)
+Planilha de Administradores
+URL: https://docs.google.com/spreadsheets/d/1SCsmn4tcQWA42q5tVYALtrcJ775MRb6ynbD3f97JmFs/edit
+
+Colunas:
+
+A: Login (ex: Z481036)
+B: Nome
+C: Ativo (TRUE/FALSE)
+5. Configure os Google Forms
+Edite o arquivo server/google-sheets.ts e substitua os links dos formulários:
+
+export const FORMULARIOS_OCORRENCIA = {
+  '1': {
+    nome: 'Rede Externa',
+    url: 'SEU_LINK_DO_GOOGLE_FORMS_AQUI'
+  },
+  // ... outros formulários
+};
+6. Execute o projeto
+Desenvolvimento
+npm run dev
+Produção
+npm run build
+npm start
+🔐 Configuração das Credenciais do Google
+1. Acesse o Google Cloud Console
+Vá para https://console.cloud.google.com
+Crie um novo projeto ou selecione um existente
+2. Ative a API do Google Sheets
+Vá para "APIs e Serviços" > "Biblioteca"
+Procure por "Google Sheets API"
+Clique em "Ativar"
+3. Crie uma Service Account
+Vá para "APIs e Serviços" > "Credenciais"
+Clique em "Criar Credenciais" > "Conta de Serviço"
+Preencha os dados da conta de serviço
+Baixe o arquivo JSON com as credenciais
+4. Configure as permissões
+Abra as planilhas do Google Sheets
+Clique em "Compartilhar"
+Adicione o email da service account com permissão de "Editor"
+5. Configure a variável de ambiente
+Copie todo o conteúdo do arquivo JSON baixado e cole como valor da variável GOOGLE_CREDENTIALS_JSON.
+
+🚀 Deploy no Render
+1. Conecte o repositório
+Acesse https://render.com
+Conecte sua conta do GitHub
+Selecione o repositório
+2. Configure as variáveis de ambiente
+No painel do Render, adicione todas as variáveis do arquivo .env:
+
+TELEGRAM_BOT_TOKEN
+TELEGRAM_WEBHOOK_URL
+GOOGLE_CREDENTIALS_JSON
+NODE_ENV=production
+3. Configure o build
+Build Command: npm run build
+Start Command: npm start
+📁 Estrutura do Projeto
+ruby-ocorrencias-bot/
+├── client/                 # Frontend React
+│   ├── src/
+│   │   ├── components/     # Componentes UI
+│   │   ├── pages/          # Páginas da aplicação
+│   │   └── lib/            # Utilitários
+├── server/                 # Backend Express
+│   ├── bot/                # Lógica do bot Telegram
+│   │   ├── index.ts        # Inicialização do bot
+│   │   └── commands.ts     # Comandos e handlers
+│   ├── google-sheets.ts    # Integração Google Sheets
+│   ├── storage.ts          # Sistema de armazenamento
+│   ├── routes.ts           # Rotas da API
+│   └── index.ts            # Servidor principal
+├── shared/                 # Schemas compartilhados
+│   └── schema.ts           # Definições do banco de dados
+├── .env.example            # Exemplo de configuração
+├── package.json            # Dependências
+└── README.md               # Documentação
+🔄 Fluxo de Uso
+Inicialização: Usuário envia /start
+Autenticação: Usuário faz /login com código (ex: Z481036)
+Validação: Bot verifica nas planilhas do Google Sheets
+Registro: Usuário escolhe tipo de ocorrência com /ocorrencia
+Formulário: Bot fornece link do Google Forms específico
+Confirmação: Bot confirma que a ocorrência foi gerada
+🛠️ Desenvolvimento
+Modo de Desenvolvimento
+O bot inclui um modo de desenvolvimento que simula a autenticação quando as credenciais do Google não estão configuradas.
+
+Logs
+Todos os logs importantes são exibidos no console para facilitar o debug.
+
+Testes
+Para testar o bot localmente:
+
+Configure apenas o TELEGRAM_BOT_TOKEN
+Execute npm run dev
+O bot funcionará em modo de desenvolvimento
+📞 Suporte
+Para dúvidas ou problemas:
+
+Verifique os logs do servidor
+Confirme se as credenciais do Google estão corretas
+Verifique se o bot tem acesso às planilhas
+Entre em contato com a administração
+📝 Licença
+MIT License - veja o arquivo LICENSE para detalhes.
+
+Ruby Telecom - Sistema de Ocorrências Técnicas
