@@ -51,13 +51,19 @@ async function handleMessage(msg: any) {
   if (text.startsWith('/start')) {
     return bot.sendMessage(chatId, 
       '🤖 *Ruby AI Bot Ativado!*\n\n' +
-      '💬 Comandos disponíveis:\n' +
-      '• /login <código> - Login do técnico\n' +
-      '• /ocorrencia - Criar nova ocorrência\n' +
-      '• /historico - Ver histórico\n' +
-      '• /status <contrato> - Status de contrato\n' +
-      '• /buscar <contrato> - Buscar ocorrências por contrato\n' +
-      '• /master - Comandos administrativos (se admin)', 
+      '💬 *Interface Técnico:*\n' +
+      '• /login <código>\n' +
+      '• /logout\n' +
+      '• /ocorrencia\n' +
+      '• /historico\n' +
+      '• /status <contrato>\n' +
+      '• /buscar <contrato>\n\n' +
+      '🎛 *Interface Administrador:*\n' +
+      '• /setmaster\n' +
+      '• /master\n' +
+      '• /gerenciar <ID>\n' +
+      '• /atualizar <contrato> <status>\n\n' +
+      '💡 Use /help para ajuda detalhada.', 
       { parse_mode: 'Markdown' }
     );
   }
@@ -78,10 +84,17 @@ async function handleMessage(msg: any) {
     return bot.sendMessage(chatId, '✅ Logout efetuado.');
   }
 
+  // /setmaster
+  if (text.startsWith('/setmaster')) {
+    if (!user) return bot.sendMessage(chatId, '❌ Faça login primeiro.');
+    users[chatId].isMaster = true;
+    saveUsers();
+    return bot.sendMessage(chatId, '🎖️ Usuário agora é administrador master!');
+  }
+
   // /ocorrencia
   if (text.startsWith('/ocorrencia')) {
     if (!user) return bot.sendMessage(chatId, '❌ Faça login primeiro com /login <código>');
-
     const keyboard = {
       inline_keyboard: [
         [{ text: '📡 Rede Externa', callback_data: 'rede_externa' }],
@@ -95,7 +108,7 @@ async function handleMessage(msg: any) {
 
   // /historico
   if (text.startsWith('/historico')) {
-    if (!user) return bot.sendMessage(chatId, '❌ Faça login primeiro com /login <código>');
+    if (!user) return bot.sendMessage(chatId, '❌ Faça login primeiro.');
     const userOccurrences = occurrences.filter(o => o.chatId === chatId);
     if (userOccurrences.length === 0) return bot.sendMessage(chatId, '📋 Nenhuma ocorrência encontrada.');
     
@@ -136,6 +149,43 @@ async function handleMessage(msg: any) {
     });
 
     return bot.sendMessage(chatId, msgText, { parse_mode: 'Markdown' });
+  }
+
+  // /master
+  if (text.startsWith('/master')) {
+    if (!user?.isMaster) return bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
+    const pending = occurrences.filter(o => o.status === 'Em análise');
+    if (pending.length === 0) return bot.sendMessage(chatId, '✅ Nenhuma pendência no momento.');
+
+    let msgText = '📊 *Pendências:*\n\n';
+    pending.forEach(o => {
+      msgText += `🔹 ID: ${o.id}\n📄 Contrato: ${o.contract}\n👷 Técnico: ${o.userCode}\n🔧 Tipo: ${o.type}\n📊 Status: ${o.status}\n⏰ Data: ${o.date}\n\n`;
+    });
+    return bot.sendMessage(chatId, msgText, { parse_mode: 'Markdown' });
+  }
+
+  // /gerenciar <ID>
+  if (text.startsWith('/gerenciar')) {
+    if (!user?.isMaster) return bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
+    const id = text.split(' ')[1];
+    const occ = occurrences.find(o => o.id === id);
+    if (!occ) return bot.sendMessage(chatId, '❌ Ocorrência não encontrada.');
+    return bot.sendMessage(chatId, `✅ Ocorrência ${id} pronta para atualização. Use /atualizar ${occ.contract} <status>`);
+  }
+
+  // /atualizar <contrato> <status>
+  if (text.startsWith('/atualizar')) {
+    if (!user?.isMaster) return bot.sendMessage(chatId, '❌ Acesso negado. Apenas administradores.');
+    const parts = text.split(' ');
+    const contract = parts[1];
+    const newStatus = parts.slice(2).join(' ');
+    if (!contract || !newStatus) return bot.sendMessage(chatId, '❌ Use /atualizar <contrato> <status>');
+
+    occurrences.forEach(o => {
+      if (o.contract === contract) o.status = newStatus;
+    });
+    saveOccurrences();
+    return bot.sendMessage(chatId, `✅ Status do contrato ${contract} atualizado para "${newStatus}"`);
   }
 
   // Processamento natural com Ruby AI
