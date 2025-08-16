@@ -3,7 +3,7 @@ import bodyParser from "body-parser";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { handleRubyAI } from "./ruby-ai.js";
+import { processRubyMessage } from "./ruby-ai.js";
 import { registerCommand, handleCommand } from "./commands.js";
 
 // Corrige __dirname em ambiente ESM
