@@ -1,114 +1,98 @@
-import fs from 'fs';
-import path from 'path';
-import { TelegramBot } from 'node-telegram-bot-api';
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-const usersPath = path.join(__dirname, 'data', 'users.json');
-const occurrencesPath = path.join(__dirname, 'data', 'occurrences.json');
+// Corrige __dirname em ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-interface User {
-  login: string;
-  nome: string;
-  area: string;
-  telefone: string;
-  telegramId: number;
-  isAdmin?: boolean;
+// Caminhos dos arquivos JSON
+const DATA_DIR = path.join(__dirname, "data");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
+const OCCURRENCES_FILE = path.join(DATA_DIR, "occurrences.json");
+
+// Garante que arquivos existam
+if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, "[]", "utf-8");
+if (!fs.existsSync(OCCURRENCES_FILE)) fs.writeFileSync(OCCURRENCES_FILE, "[]", "utf-8");
+
+// Lê arquivo JSON
+function readJson(file: string) {
+  return JSON.parse(fs.readFileSync(file, "utf-8"));
 }
 
-interface Occurrence {
-  id: string;
-  contrato: string;
-  tipo: string;
-  problema?: string;
-  local?: string;
-  urgencia?: string;
-  status: string;
-  tecnico: string;
-  criadoEm: string;
+// Salva arquivo JSON
+function writeJson(file: string, data: any) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf-8");
 }
 
-export function loadUsers(): User[] {
-  if (!fs.existsSync(usersPath)) return [];
-  return JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
+// ----- REGISTRO DE COMANDOS -----
+const commands: Record<string, Function> = {};
+
+// Registra novo comando
+export function registerCommand(name: string, callback: Function) {
+  commands[name] = callback;
 }
 
-export function saveUsers(users: User[]) {
-  fs.writeFileSync(usersPath, JSON.stringify(users, null, 2), 'utf-8');
-}
+// Executa comando
+export async function handleCommand(message: string, chatId: string) {
+  const [cmd, ...args] = message.trim().split(" ");
+  const command = commands[cmd];
 
-export function loadOccurrences(): Occurrence[] {
-  if (!fs.existsSync(occurrencesPath)) return [];
-  return JSON.parse(fs.readFileSync(occurrencesPath, 'utf-8'));
-}
-
-export function saveOccurrences(occurrences: Occurrence[]) {
-  fs.writeFileSync(occurrencesPath, JSON.stringify(occurrences, null, 2), 'utf-8');
-}
-
-export function generateId(length = 8) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let id = '';
-  for (let i = 0; i < length; i++) {
-    id += chars.charAt(Math.floor(Math.random() * chars.length));
+  if (command) {
+    return await command(chatId, args);
   }
-  return id;
+  return `❌ Comando desconhecido: ${cmd}\nDigite /help para ver os comandos disponíveis.`;
 }
 
-// Verifica se é administrador
-export function isAdmin(user: User, masterNumber: string) {
-  return user.isAdmin || user.telefone === masterNumber;
-}
+// ----- IMPLEMENTAÇÃO DOS COMANDOS -----
 
-// Limpar histórico e remover usuário (apenas admin)
-export function limparUsuario(telefone: string) {
-  let users = loadUsers();
-  let occurrences = loadOccurrences();
+// /start → Boas-vindas
+registerCommand("/start", async (chatId: string) => {
+  return `👋 Olá! Eu sou o *Ruby Bot*.\nUse /help para ver os comandos disponíveis.`;
+});
 
-  users = users.filter(u => u.telefone !== telefone);
-  occurrences = occurrences.filter(o => o.tecnico !== telefone);
+// /help → Lista comandos
+registerCommand("/help", async () => {
+  return `📖 *Comandos disponíveis*:
+  
+/start → Inicia o bot
+/help → Mostra esta ajuda
+/forcelogin <nome> → Força login de um usuário
+/master → Lista todas as ocorrências`;
+});
 
-  saveUsers(users);
-  saveOccurrences(occurrences);
-}
+// /forcelogin → Cadastra manualmente usuário
+registerCommand("/forcelogin", async (chatId: string, args: string[]) => {
+  if (args.length === 0) {
+    return "⚠️ Uso correto: /forcelogin <nome>";
+  }
 
-// Comando de ajuda
-export function helpMessage(): string {
-  return `
-📖 Ajuda - Ruby Ocorrências Bot
+  const name = args.join(" ");
+  const users = readJson(USERS_FILE);
 
-🔹 Comandos Principais:
-/start - Inicializar o bot
-/login - Fazer login no sistema
-/forcelogin - Forçar novo login (limpar dados, apenas admins)
-/logout - Sair do sistema
-/ocorrencia - Registrar nova ocorrência
-/historico - Ver suas ocorrências recentes
-/status <número> - Consultar ocorrências por contrato
+  // Verifica se já existe
+  if (users.find((u: any) => u.chatId === chatId)) {
+    return "✅ Usuário já está cadastrado!";
+  }
 
-🔹 Como usar:
-1️⃣ /login para se autenticar
-2️⃣ /ocorrencia para registrar ocorrências
-3️⃣ Escolha o tipo de ocorrência
-4️⃣ Digite o número do contrato
-5️⃣ Preencha o formulário enviado
-6️⃣ /historico para ver suas ocorrências
-7️⃣ /status <número> para consultar por contrato
+  users.push({ chatId, name, createdAt: new Date().toISOString() });
+  writeJson(USERS_FILE, users);
 
-🔹 Tipos de Ocorrência:
-• Rede Externa
-• Rede Externa NAP GPON  
-• Backbone
-• Backbone GPON
+  return `✅ Usuário *${name}* cadastrado com sucesso!`;
+});
 
-📞 Suporte: Entre em contato com a administração
+// /master → Lista ocorrências registradas
+registerCommand("/master", async () => {
+  const occurrences = readJson(OCCURRENCES_FILE);
 
-Ruby Telecom - Sistema de Ocorrências
-  `;
-}
+  if (occurrences.length === 0) {
+    return "📂 Nenhuma ocorrência registrada até agora.";
+  }
 
-// Mapas de formulários
-export const formsMap: Record<string, string> = {
-  'Rede Externa': 'https://redeexterna.fillout.com/t/g56SBKiZALus',
-  'Rede Externa NAP GPON': 'https://redeexterna.fillout.com/t/6VTMJST5NMus',
-  'Backbone': 'https://redeexterna.fillout.com/t/7zfWL9BKM6us',
-  'Backbone GPON': 'https://redeexterna.fillout.com/t/atLL2dekh3us'
-};
+  let text = "📋 *Ocorrências registradas*:\n\n";
+  occurrences.forEach((occ: any, i: number) => {
+    text += `${i + 1}. ${occ.type || "Sem tipo"} - ${occ.description || "Sem descrição"} (${occ.createdAt})\n`;
+  });
+
+  return text;
+});
