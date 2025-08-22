@@ -2,63 +2,84 @@
 import TelegramBot, { SendMessageOptions } from 'node-telegram-bot-api';
 import path from 'path';
 import fs from 'fs';
-import { processRubyMessage } from './ruby-ai.ts'; // Caminho corrigido
-import { fileURLToPath } from 'url';
+import { processRubyMessage } from './ruby-ai.ts'; // Import relativo correto
 
-// Ajuste para __dirname em ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Pasta para armazenar dados
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const OCCURRENCES_FILE = path.join(DATA_DIR, 'occurrences.json');
-
-// Certifique-se de ter a variável de ambiente com seu token
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-if (!TOKEN) {
-  throw new Error('Telegram Bot Token não fornecido! Defina a variável de ambiente TELEGRAM_BOT_TOKEN.');
+// Pega token do ambiente
+const botToken = process.env.TELEGRAM_BOT_TOKEN;
+if (!botToken) {
+  throw new Error('Telegram Bot Token não fornecido! Configure TELEGRAM_BOT_TOKEN nas variáveis de ambiente.');
 }
 
-// Inicializa o bot
-const bot = new TelegramBot(TOKEN, { polling: true });
-console.log('🚀 Servidor Ruby Bot iniciado!');
+// Cria instância do bot
+const bot = new TelegramBot(botToken, { polling: true });
 
-// Função para ler JSON
-function readJSON(file: string) {
-  if (!fs.existsSync(file)) return [];
-  return JSON.parse(fs.readFileSync(file, 'utf-8'));
+// Define diretório de dados
+const DATA_DIR = path.join(process.cwd(), 'server', 'data');
+const usersFile = path.join(DATA_DIR, 'users.json');
+const occurrencesFile = path.join(DATA_DIR, 'occurrences.json');
+
+// Função auxiliar para ler JSON
+function readJSON(filePath: string) {
+  if (!fs.existsSync(filePath)) return [];
+  const data = fs.readFileSync(filePath, 'utf-8');
+  return JSON.parse(data);
 }
 
-// Função para escrever JSON
-function writeJSON(file: string, data: any) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+// Função auxiliar para salvar JSON
+function saveJSON(filePath: string, data: any) {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-// Handlers principais
+// Comandos básicos do bot
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, 'Olá! 🤖 Eu sou a Ruby, seu assistente de ocorrências.\nUse /help para ver os comandos.');
+});
+
+bot.onText(/\/help/, (msg) => {
+  const chatId = msg.chat.id;
+  bot.sendMessage(
+    chatId,
+    `📖 Comandos disponíveis:\n` +
+      `/start - Iniciar o bot\n` +
+      `/login - Autenticar técnico\n` +
+      `/ocorrencia - Registrar nova ocorrência\n` +
+      `/historico - Ver ocorrências recentes\n` +
+      `/status <número> - Consultar contrato`
+  );
+});
+
+// Registrar ocorrência
+bot.onText(/\/ocorrencia/, (msg) => {
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, 'Digite a descrição da ocorrência:');
+});
+
+// Histórico de ocorrências
+bot.onText(/\/historico/, (msg) => {
+  const chatId = msg.chat.id;
+  const occurrences = readJSON(occurrencesFile);
+  if (!occurrences.length) {
+    bot.sendMessage(chatId, 'Nenhuma ocorrência registrada ainda.');
+    return;
+  }
+  const list = occurrences.map((o: any, i: number) => `${i + 1}. ${o.description}`).join('\n');
+  bot.sendMessage(chatId, `📄 Histórico de ocorrências:\n${list}`);
+});
+
+// Mensagens genéricas processadas pelo Ruby AI
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
-  const text = msg.text || '';
 
-  // Verifica se é comando
-  if (text.startsWith('/')) {
-    switch (true) {
-      case text === '/start':
-        bot.sendMessage(chatId, 'Olá! Eu sou a Ruby, seu assistente de ocorrências. Use /help para ver os comandos.');
-        break;
+  // Ignora comandos que já são tratados
+  if (msg.text?.startsWith('/')) return;
 
-      case text === '/help':
-        bot.sendMessage(chatId,
-          `📖 Comandos disponíveis:\n` +
-          `/start - Iniciar o bot\n` +
-          `/login - Autenticar técnico\n` +
-          `/forcelogin - Limpar todos os dados (apenas admins)\n` +
-          `/logout - Sair do sistema\n` +
-          `/ocorrencia - Registrar nova ocorrência\n` +
-          `/historico - Ver ocorrências recentes\n` +
-          `/status <número> - Consultar contrato\n` +
-          `/whoami - Ver usuário atual`
-        );
+  const response = await processRubyMessage(msg.text || '');
+  const options: SendMessageOptions = response.options || {};
+  bot.sendMessage(chatId, response.message, options);
+});
+
+console.log('🚀 Bot Ruby iniciado com sucesso na porta do Telegram!');
         break;
 
       default:
