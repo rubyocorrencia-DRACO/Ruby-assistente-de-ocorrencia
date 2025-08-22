@@ -1,6 +1,6 @@
 import express from "express";
 import TelegramBot from "node-telegram-bot-api";
-import { handleMessage } from "../ruby-ai.js";
+import { handleMessage } from "../ruby-ai.ts";
 
 const app = express();
 const port = process.env.PORT || 10000;
