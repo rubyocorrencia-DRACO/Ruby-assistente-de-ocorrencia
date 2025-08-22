@@ -1,48 +1,39 @@
-// server/index.ts
-import TelegramBot from "node-telegram-bot-api";
 import express from "express";
-import bodyParser from "body-parser";
-import { processRubyMessage } from "./ruby-ai.js";
+import TelegramBot from "node-telegram-bot-api";
+import { handleMessage } from "../ruby-ai.js";
 
-const token = process.env.BOT_TOKEN!;
-const url = process.env.RENDER_EXTERNAL_URL!; // URL pública do Render
-const port = process.env.PORT || 3000;
-
-const bot = new TelegramBot(token, { webHook: { port: Number(port) } });
-
-// Define webhook no endpoint do Render
-bot.setWebHook(`${url}/webhook`);
-
-// Express app
 const app = express();
-app.use(bodyParser.json());
+const port = process.env.PORT || 10000;
 
-// Rota de saúde
-app.get("/", (req, res) => {
-  res.send("✅ Ruby Bot rodando via webhook!");
-});
+// Pega o token da variável TELEGRAM_BOT_TOKEN
+const token = process.env.TELEGRAM_BOT_TOKEN as string;
+if (!token) {
+  throw new Error("Telegram Bot Token not provided!");
+}
 
-// Endpoint que o Telegram vai chamar
-app.post("/webhook", (req, res) => {
+// Cria o bot com webhook (modo Render)
+const bot = new TelegramBot(token, { webHook: true });
+
+// Define o webhook (Render fornece a URL)
+const url = process.env.RENDER_EXTERNAL_URL || `https://localhost:${port}`;
+bot.setWebHook(`${url}/bot${token}`);
+
+// Endpoint para o Telegram enviar mensagens
+app.use(express.json());
+app.post(`/bot${token}`, (req, res) => {
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
 
-// Lógica principal do bot
+// Quando receber mensagem, chama o ruby-ai
 bot.on("message", async (msg) => {
-  if (!msg.text) return;
   const chatId = msg.chat.id;
+  const text = msg.text || "";
 
-  try {
-    const response = await processRubyMessage(msg.text);
-    await bot.sendMessage(chatId, response.message, response.options);
-  } catch (err) {
-    console.error("Erro ao processar mensagem:", err);
-    await bot.sendMessage(chatId, "⚠️ Ocorreu um erro interno. Tente novamente.");
-  }
+  const resposta = await handleMessage(text);
+  bot.sendMessage(chatId, resposta);
 });
 
-// Start manual caso o webhook não dispare
 app.listen(port, () => {
   console.log(`🚀 Servidor ouvindo na porta ${port}`);
 });
