@@ -2,7 +2,7 @@
 import TelegramBot, { SendMessageOptions } from 'node-telegram-bot-api';
 import path from 'path';
 import fs from 'fs';
-import { processRubyMessage } from './ruby-ai.ts'; // Import relativo correto
+import { processRubyMessage } from './ruby-ai.js';
 
 // Pega token do ambiente
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
