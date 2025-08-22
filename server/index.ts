@@ -1,55 +1,48 @@
+// server/index.ts
+import TelegramBot from "node-telegram-bot-api";
 import express from "express";
 import bodyParser from "body-parser";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { processRubyMessage } from "./ruby-ai.js";
-import { registerCommand, handleCommand } from "./commands.js";
 
-// Corrige __dirname em ambiente ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const token = process.env.BOT_TOKEN!;
+const url = process.env.RENDER_EXTERNAL_URL!; // URL pública do Render
+const port = process.env.PORT || 3000;
 
-// Diretório onde ficam os arquivos JSON
-const DATA_DIR = path.join(__dirname, "data");
+const bot = new TelegramBot(token, { webHook: { port: Number(port) } });
 
-// Garante que a pasta data existe
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+// Define webhook no endpoint do Render
+bot.setWebHook(`${url}/webhook`);
 
-// Inicializa servidor
+// Express app
 const app = express();
 app.use(bodyParser.json());
 
-// Rota principal do bot
-app.post("/webhook", async (req, res) => {
+// Rota de saúde
+app.get("/", (req, res) => {
+  res.send("✅ Ruby Bot rodando via webhook!");
+});
+
+// Endpoint que o Telegram vai chamar
+app.post("/webhook", (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+// Lógica principal do bot
+bot.on("message", async (msg) => {
+  if (!msg.text) return;
+  const chatId = msg.chat.id;
+
   try {
-    const message = req.body.message || "";
-    const chatId = req.body.chatId || "";
-
-    let response;
-
-    if (message.startsWith("/")) {
-      response = await handleCommand(message, chatId);
-    } else {
-      response = await handleRubyAI(message, chatId);
-    }
-
-    res.json({ reply: response });
+    const response = await processRubyMessage(msg.text);
+    await bot.sendMessage(chatId, response.message, response.options);
   } catch (err) {
-    console.error("Erro no webhook:", err);
-    res.status(500).json({ error: "Erro interno do servidor" });
+    console.error("Erro ao processar mensagem:", err);
+    await bot.sendMessage(chatId, "⚠️ Ocorreu um erro interno. Tente novamente.");
   }
 });
 
-// Rota de status
-app.get("/", (req, res) => {
-  res.send("Ruby Bot está rodando ✅");
-});
-
-// Porta do Render
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+// Start manual caso o webhook não dispare
+app.listen(port, () => {
+  console.log(`🚀 Servidor ouvindo na porta ${port}`);
 });
