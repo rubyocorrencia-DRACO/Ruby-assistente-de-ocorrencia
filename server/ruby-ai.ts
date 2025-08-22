@@ -1,22 +1,45 @@
-// ruby-ai.ts
-export async function handleMessage(text: string): Promise<string> {
-  text = text.toLowerCase();
+// server/ruby-ai.ts
+import { SendMessageOptions } from 'node-telegram-bot-api';
 
-  if (text.includes("oi") || text.includes("olá")) {
-    return "👋 Olá! Eu sou a Ruby, sua assistente de ocorrências. Como posso ajudar?";
+// Função que processa mensagens do tipo “Ruby AI”
+export async function processRubyMessage(
+  text: string
+): Promise<{ message: string; options?: SendMessageOptions }> {
+  const lower = text.toLowerCase();
+
+  // Saudações
+  if (lower.includes('olá') || lower.includes('oi')) {
+    return { message: 'Olá! 🤖 Eu sou a Ruby, seu assistente de ocorrências.' };
   }
 
-  if (text.includes("ocorrência") || text.includes("abrir")) {
-    return "📋 Para abrir uma ocorrência, me envie os seguintes dados:\n- Nome do técnico\n- Local da ocorrência\n- Descrição do problema";
+  // Pedido de ajuda
+  if (lower.includes('ajuda') || lower.includes('help')) {
+    return {
+      message:
+        `📖 Comandos disponíveis:\n` +
+        `/start - Iniciar o bot\n` +
+        `/login - Autenticar técnico\n` +
+        `/ocorrencia - Registrar nova ocorrência\n` +
+        `/historico - Ver ocorrências recentes\n` +
+        `/status <número> - Consultar contrato`
+    };
   }
 
-  if (text.includes("ajuda") || text.includes("suporte")) {
-    return "🤝 Claro! Estou aqui para ajudar.\nVocê pode abrir uma ocorrência ou consultar informações de rede.";
+  // Perguntas sobre ocorrências
+  if (
+    lower.includes('problema') ||
+    lower.includes('ocorrencia') ||
+    lower.includes('internet') ||
+    lower.includes('eletric')
+  ) {
+    return {
+      message:
+        'Entendi! Para criar uma ocorrência, use o comando /ocorrencia e siga as instruções que eu enviarei.'
+    };
   }
 
-  if (text.includes("rede")) {
-    return "🌐 Detectei que você mencionou *rede*. Deseja abrir uma ocorrência relacionada a Rede Externa ou Interna?";
-  }
-
-  return "❓ Não entendi sua mensagem. Digite *ajuda* para ver o que eu consigo fazer.";
+  // Resposta padrão
+  return {
+    message: 'Desculpe, não entendi. 🤔 Tente usar /help para ver os comandos disponíveis.'
+  };
 }
